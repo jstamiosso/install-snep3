@@ -1,0 +1,936 @@
+#!/bin/bash
+#
+# Rotina baseada em http://wiki.opens.com.br/pages/viewpage.action?pageId=13631933
+#
+#       Copyright (C) 2016 Tamiosso, Juliano <jstamiosso@gmail.com>
+#       
+#       This program is free software; you can redistribute it and/or modify
+#       it under the terms of the GNU General Public License as published by
+#       the Free Software Foundation; either version 3 of the License, or
+#       any later version.
+#       
+#       This program is distributed in the hope that it will be useful,
+#       but WITHOUT ANY WARRANTY; without even the implied warranty of
+#       MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#       GNU General Public License for more details.
+#       
+#		Tradução dos Termos desta Licença GNU/GPLv3
+#
+#		Este programa é um software livre; você pode redistribui-lo e/ou 
+#	    modifica-lo dentro dos termos da Licença Pública Geral GNU como 
+#	    publicada pela Fundação do Software Livre (FSF); na versão 3 da 
+#		Licença, ou qualquer versão.
+#
+#		Este programa é distribuido na esperança que possa ser  util, 
+#		mas SEM NENHUMA GARANTIA; sem uma garantia implicita de ADEQUAÇÃO
+#		a qualquer MERCADO ou APLICAÇÃO EM PARTICULAR. Veja a
+#	    Licença Pública Geral GNU para maiores detalhes.
+#
+#		Acesse http://www.gnu.org/licenses/gpl-3.0.html para obter uma cópia da licença.
+
+########### Declarando Variáveis ###########
+# Versão do script
+autor='Juliano Tamiosso <jstamiosso@gmail.com>'
+versao='1.5'
+versaoData='16/01/2017'
+
+#----------------------------------------------------
+# Declarando variáveis
+#----------------------------------------------------
+# Definindo o diretório raiz do script
+dirProg="$(dirname $0)"; dirProg="$(cd $dirProg; pwd)"
+
+# Variáveis de controle
+arqErros='/tmp/erros'
+arqPasso="$dirProg/passos"
+
+
+# Array Cores
+declare -A arrCores
+arrCores['vermelho']=1
+arrCores['verde']=2
+arrCores['amarelo']=3
+arrCores['azul']=4
+arrCores['rosa']=5
+
+# Array Passo
+declare -A passo
+passo[0]='aptGetUpdate'
+passo[1]='aptGetInstall'
+passo[2]='baixaAsterisk'
+passo[3]='tarAsterisk'
+passo[4]='configureAsterisk'
+passo[5]='makeMenuSelectAsterisk'
+passo[6]='makeAsterisk'
+passo[7]='makeInstallAsterisk'
+passo[8]='makeConfigAsterisk'
+passo[9]='baixaSnep3'
+passo[10]='ajustesSnep3'
+passo[11]='preparaDirSonsSnep3'
+passo[12]='tarSonsSnep3'
+passo[13]='ajustesSonsSnep3'
+passo[14]='bancoSnep3'
+passo[15]='odbcSnep3'
+
+###################################################
+#            Declarando as funções                #
+###################################################
+
+# Função responsável por monitorar as versões dos módulos de funções
+function versaoScript(){
+# Exibe a versão deste script
+echo ''
+tput setaf 3;
+
+echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+echo "    .--.                     					                "
+echo "   |o_o |     Script: $0   				        "
+echo "   |:_/ |          							        "
+echo "  //   \ \    Versão: $versao - data: $versaoData       		                "
+echo " (|     | )                                                                     "
+echo "/'\_   _/\`\   Objeto: Instala todos os pacotes necessários para rodar o SNEP 3  "
+echo "\___)=(___/   Autor: $autor                    "
+echo "                                                                                "
+echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+
+tput sgr0;
+sleep 1
+echo -e "\n"
+
+}
+
+# Formata a mensagem colorida
+function corMsg() {
+local codCor=${arrCores["$1"]}
+shift
+
+if [ "$codCor" ]; then
+    tput setaf $codCor; tput bold; echo -e "=> $*"; tput sgr0
+else
+    echo -e "=> $*"
+fi
+}
+
+# Tratamento de erros
+# $msgErro = string mesagem do erro que será mostrada na tela
+# $msgCorrige = string mensagem de solução para o erro
+# $msgPasso = string chave|valor array passo com função onde ocorreu erro
+# return exit sai do script
+function trataErros(){
+
+corMsg 'vermelho' "$msgErro"
+corMsg 'azul' "$msgCorrige"
+
+# Verifica se existe informações sobre erros ocorridos
+verErro="$(cat $arqErros)"
+if [ -n "$verErro" ]; then
+	echo -e "Este foi o erro que ocorreu: "
+	echo '############################################################################################'
+	cat $arqErros
+	echo '############################################################################################'
+	rm -f $arqErros
+fi
+
+# Verifica se a variável $remover não está vazia
+[ -n "$remover" ] && rm -rf "$remover"
+
+# Verifica se a variável $msgPasso não está vazia
+[ -n "$msgPasso" ] && echo "$msgPasso" > "$arqPasso"
+
+# pula uma linha
+echo ''
+# Mostra mensagem após 10 segundos
+echo -ne "Saíndo "
+for p in 1 2 3 4 5 6 7 8 9 10; do
+	echo -ne "\033[9G\033[@.\033[20G"
+	sleep 1
+done;
+echo -e "[\033[20G\033[\OK"
+
+# Restaura o cursor
+tput cnorm
+
+exit 1
+}
+
+# https://www.vivaolinux.com.br/script/Implementando-a-famosa-helice-ASCII
+# Metodo POG basico para implementar a classica helice ASCII.
+# Este metodo pode ser utilizado para incrementar scripts que realizam
+# operacoes longas e que nao retornam informacoes durante esse tempo!
+# Sandro Marcell <sandro_marcell@yahoo.com.br>
+# Boa Vista, Roraima - 18/12/2008
+# Mais detalhes: 'man ascii'
+# Foram realizadas modificações por Juliano Tamiosso para adaptar a este script em 06/09/2016
+# POG = 'Programacao Orientada a Gambiarras' =)
+# # I - Executa-se o comando desejado em background: sleep 10 > /dev/null 2>&1 &
+# Funcao responsavel por implementar a helice:
+function mostraHelice() {
+   # Mostra os colchetes [       ]
+   printf "[\040\040\040\040\040\040\040] $msgTarefa ";
+   printf "\r\033[5C";
+   # Cursor invisivel (opcional!):
+   tput civis
+   #mostraHelice "$msgTarefa" "$msgOk" "$msgFail" "$msgCorrige"
+   # II - Checar se o comando em background ainda esta em execucao:
+   while [ -d /proc/$! ]
+   do
+      # III - Monta-se a helice:
+      for i in / - \\ \|
+      do
+         # Posicionamento dos caracteres
+         printf "\033[1D$i"
+         # P.S.: O escape '\033[1D' move o cursor uma posicao para esquerda!
+         sleep .1
+      done
+   done
+
+   # Verifica se o processo foi executado
+   error="$(cat $arqErros)"
+   
+   if [ -n "$error" ]; then
+	printf "\033[4D\e[31;1m\040Falhou\040\e[m]\033[0K $msgFail\n"
+	trataErros "msgErro" "$msgCorrige" "$msgPasso"
+	# Esvazia as variáveis
+	unset msgErro msgCorrige msgPasso
+   else
+	printf "\033[4D\e[32;1m\040\040\040OK\040\040\040\e[m]\033[0K $msgOk\n"
+   fi
+
+   # Restaura o cursor
+   tput cnorm
+}
+
+# Recebe a lista de pacotes a serem instalados e processa a tarefa
+function instalaPacotes(){
+
+# Realiza um loop na variável $lista e instala os pacotes
+for i in "$pacotes"; do
+# Variáveis que armazenam as mensagens
+echo ''
+corMsg 'verde' "Instalando o pacote: $i, aguarde ..."
+msgErro="Ocorreu um erro! não foi possível instalar o pacote $i"
+msgCorrige="Verifique a sua conexão com a Internet e tente novamente. Saíndo ..."
+# Instalar o pacote informando e caso ocorra algum erro passa para a função trataErros.
+apt-get install -y $i 2>$arqErros || trataErros "$msgErro" "$msgCorrige"
+
+done
+
+# Verifica se não possui pendências
+apt-get -f install 1> /dev/null
+# Esvazia a variável $pacotes
+unset pacotes
+}
+
+# Função responsável pelo tratamento dos repositórios do S.O
+function aptGetUpdate(){
+
+# Armazena na variável $varApt a informação procurada
+varApt="$(cat /etc/apt/sources.list | grep '^#SNEP3')"
+
+# Verifica se a variável $varApt está vazia (ainda não foi alterado o sources.list)
+if [ -z "$varApt" ]; then
+
+# Cria um backup do sources.list 
+mv /etc/apt/sources.list /etc/apt/sources.list-orig
+
+# Constrói um novo sources.list
+echo "#SNEP3
+deb http://ftp.br.debian.org/debian jessie main contrib non-free
+deb-src http://ftp.br.debian.org/debian jessie main contrib non-free
+
+deb http://ftp.debian.org/debian/ jessie-updates main contrib non-free
+deb-src http://ftp.debian.org/debian/ jessie-updates main contrib non-free
+
+deb http://security.debian.org/ jessie/updates main contrib non-free
+deb-src http://security.debian.org/ jessie/updates main contrib non-free
+
+### Debian 8 jessie/Stable Backports.
+deb http://http.debian.net/debian jessie-backports main contrib non-free
+
+#Debian Multimedia
+deb http://www.deb-multimedia.org jessie main non-free
+deb-src http://www.deb-multimedia.org jessie main non-free
+
+#Docker
+#DOCKER deb https://apt.dockerproject.org/repo debian-jessie main
+
+# Repositório do SNEP
+deb http://pacotes.snep.com.br jessie opens
+
+" > /etc/apt/sources.list
+fi
+
+# Instala chaves gpg necessarias
+chavesGpg='46925553 1F41B907 65558117 640DB551 2C52609D'
+
+# Percorre a variavel $chaveGpg e instala as chaves ausentes
+for f in `echo $chavesGpg`; do
+	chave=`apt-key list | grep $f`
+	# Verifica se a variável $chave está vazia
+	if [ -z "$chave" ]; then
+		# Verifica se existe a variável $proxy
+		#[ "$proxy" ] && opcao="--keyserver-options http-proxy=$proxy" || opcao=''
+		# Instala chaves gpg necessarias
+		apt-key adv $opcao --recv-keys --keyserver pgpkeys.mit.edu $f
+	fi
+done
+
+# pula uma linha
+echo ''
+
+# Variáveis que armazenam as mensagens
+msgTarefa="Atualizando lista de pacotes ..."
+msgOk="Lista de pacotes atualizada com sucesso"
+msgErro="Ocorreu um erro! não foi possível atualizar a lista de pacotes"
+msgFail="$msgErro"
+msgPasso='0|aptGetUpdate'
+msgCorrige="Verifique seus repositórios em /etc/apt/sources.list;\n=> Verifique sua conexão com a Internet e tente novamente. Saíndo ..."
+
+# Atualizando lista de pacotes
+#apt-get update
+apt-get update 1>/dev/null 2>$arqErros &
+mostraHelice "$msgTarefa" "$msgOk" "$msgFail" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+ } # FIM function aptGetUpdate
+
+# Função responsável pela instalação dos pacotes necessários
+function aptGetInstall(){
+
+# Mensagens
+msgPasso="1|aptGetInstall"
+
+# Instalando o Apache
+echo ''
+corMsg 'azul' "+ Instalando Servidor Web ...."
+# Armazena na variável $lista os pacotes que deverão ser instalados
+pacotes='apache2'
+
+# Passa por parâmetro os pacotes para a função InstalaPacotes
+instalaPacotes "$pacotes" "$msgPasso"
+
+# Instalando o MySQL com usuário sneppass e senha sneppass
+echo ''
+corMsg 'azul' "+ Instalando Servidor de Banco Dados ...."
+echo "mysql-server mysql-server/root_password password sneppass" | debconf-set-selections
+echo "mysql-server mysql-server/root_password_again password sneppass" | debconf-set-selections
+# Armazena na variável $lista os pacotes que deverão serem instalados
+pacotes='mysql-server'
+
+# Passa por parâmetro os pacotes para a função InstalaPacotes
+instalaPacotes "$pacotes" "$msgPasso"
+
+# Instalando s dependências para o processo de compilação
+echo ''
+corMsg 'azul' "+ Instalando dependências para compilar o Asterisk ...."
+# Armazena na variável $lista os pacotes que deverão ser instalados
+pacotes='unixodbc unixodbc-dev libmyodbc odbcinst1debian2 libcurl3 libncurses5-dev git libssl-dev sox'
+
+# Passa por parâmetro os pacotes para a função InstalaPacotes
+instalaPacotes "$pacotes" "$msgPasso"
+
+# Armazena na variável $lista os pacotes que deverão ser instalados
+pacotes='sqlite3 libsqlite3-dev libxml2-dev uuid-dev build-essential libjansson-dev apt-transport-https lshw'
+
+# Passa por parâmetro os pacotes para a função InstalaPacotes
+instalaPacotes "$pacotes" "$msgPasso"
+
+# Instalando servidor de aplicação
+echo ''
+corMsg 'azul' "+ Instalando Servidor de Aplicação ...."
+# Armazena na variável $lista os pacotes que deverão ser instalados
+pacotes='sudo mc php5 php5-cgi php5-mysql php5-gd php5-curl libapache2-mod-php5'
+
+# Passa por parâmetro os pacotes para a função InstalaPacotes
+instalaPacotes "$pacotes" "$msgPasso"
+
+# Ajustando o PHP
+# Habilita o php-cgi para receber parâmetros. Inserindo "On" em register_argc_argv no arquivo /etc/php5/cgi/php.ini. 
+echo ''
+corMsg 'azul' "+ Alterando parâmetros do php.ini ...."
+sed -i -e 's/register_argc_argv = Off/register_argc_argv = On/g' /etc/php5/cgi/php.ini
+
+# Habilitando o repositório DOCKER
+echo ''
+corMsg 'azul' "+ Habilitando repositório DOCKER ...."
+sed -i -e 's/^#DOCKER//g' /etc/apt/sources.list
+
+} # FIM function aptGetInstall
+
+# Função responsável por baixar a versão estável 13 do asterisk
+function baixaAsterisk(){
+
+# Mensagens
+msgPasso="2|baixaAsterisk"
+
+# Acessa o diretório onde será instalado o Asterisk e inicie o download.
+cd /usr/src/
+
+# Variáveis que armazenam as mensagens
+echo ''
+corMsg 'azul' "+ Baixando a versão estável 13 do Asterisk ...."
+remover='/usr/src/asterisk-13-current.tar.gz'
+msgErro="Ocorreu um erro! não foi possível baixar o tarball do asterisk"
+msgCorrige="Verifique sua conexão com a Internet e tente novamente. Saíndo ..."
+
+# Baixando a última versão do asterisk
+wget -c $wget_proxy http://downloads.asterisk.org/pub/telephony/asterisk/asterisk-13-current.tar.gz || trataErros "$msgErro" "$msgCorrige" "$remover" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige remover msgPasso
+
+} # FIM function baixaAsterisk
+
+# Função responsável por descompactar Asterisk
+function tarAsterisk(){
+
+# Variáveis que armazenam as mensagens
+echo ''
+corMsg 'azul' "+ Descompactando o Asterisk ...."
+remover='/usr/src/asterisk-13.*'
+msgErro="Ocorreu um erro! não foi possível descompactar o tarball do asterisk"
+msgCorrige="Verifique sua conexão com a Internet e tente novamente. Saíndo ..."
+msgPasso="3|tarAsterisk"
+# Descompactando o asterisk
+tar xf /usr/src/asterisk-13-current.tar.gz || trataErros "$msgErro" "$msgCorrige" "remover" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige remover msgPasso
+
+} # FIM function tarAsterisk
+
+# Função responsável por criar makefile Asterisk
+function configureAsterisk(){
+
+# Pré-compilando o Asterisk
+echo '' 
+corMsg 'azul' "+ Entrando no diretório do Asterisk ...."
+
+# Entra no diretório do asterisk
+cd /usr/src/asterisk*
+
+# Variáveis que armazenam as mensagens
+echo ''
+corMsg 'azul' "+ Construindo o instalador do Asterisk com parâmetros default...."
+msgErro="Ocorreu um erro! não foi possível construir o arquivo makefile para compilar o asterisk"
+msgCorrige="Verifique sua conexão com a Internet e tente novamente. Saíndo ..."
+msgPasso="4|configureAsterisk"
+# Compilando asterisk
+./configure 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function configureAsterisk
+
+# Função responsável por adicionar opções no menuselect do Asterisk
+function makeMenuSelectAsterisk(){
+
+# Entra no diretório do asterisk
+cd /usr/src/asterisk*
+
+# Variáveis que armazenam as mensagens
+echo ''
+corMsg 'azul' "+ Acrescentando opções no menuselect do Asterisk ...."
+msgErro="Ocorreu um erro! não foi possível selecionar a opção 'ODBC_STORAGE' no menuselect do asterisk"
+msgCorrige="Verifique se os pacotes essenciais para compilação foram instalados e tente novamente. Saíndo ..."
+msgPasso="5|makeMenuSelectAsterisk"
+# Preparando e compilando o Asterisk
+make menuselect.makeopts
+menuselect/menuselect --enable ODBC_STORAGE menuselect.makeopts 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function makeMenuSelectAsterisk
+
+# Função responsável por criar makefile Asterisk
+function makeAsterisk(){
+
+# Entra no diretório do asterisk
+cd /usr/src/asterisk*
+
+# Variáveis que armazenam as mensagens
+echo ''
+corMsg 'azul' "+ Compilando o Asterisk ...."
+msgErro="Ocorreu um erro! não foi possível compilar o Asterisk"
+msgCorrige="Verifique se os pacotes essenciais para compilação foram instalados e tente novamente. Saíndo ..."
+msgPasso="6|makeAsterisk"
+# Criando makefile do Asterisk
+make 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function makeAsterisk
+
+# Função responsável por instalar o Asterisk
+function makeInstallAsterisk(){
+
+# Entra no diretório do asterisk
+cd /usr/src/asterisk*
+
+# Variáveis que armazenam as mensagens
+echo ''
+corMsg 'azul' "+ Instalando o Asterisk ...."
+msgErro="Ocorreu um erro! não foi possível instalar o Asterisk"
+msgCorrige="Verifique se os pacotes essenciais para compilação foram instalados e tente novamente. Saíndo ..."
+msgPasso="7|makeInstallAsterisk"
+# Instalando o Asterisk
+make install 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function makeInstallAsterisk
+
+# Função responsável por ativar a inicialização automática do Asterisk
+function makeConfigAsterisk(){
+	
+# Entra no diretório do asterisk
+cd /usr/src/asterisk*
+
+# Variáveis que armazenam as mensagens
+echo ''
+corMsg 'azul' "+ Ativando a inicialização automática do Asterisk ...."
+msgErro="Ocorreu um erro! não foi possível gerar o daemon de gerenciamento do serviço do asterisk"
+msgCorrige="Verifique se os pacotes essenciais para compilação foram instalados e tente novamente. Saíndo ..."
+msgPasso="8|makeConfigAsterisk"
+# Criando o inicializador do Asterisk
+make config 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function makeConfigAsterisk
+
+# Função responsável por baixar última versão estável do SNEP 3
+function baixaSnep3(){
+
+# Permitir mostrar mais detalhes no debug do GIT
+GIT_CURL_VERBOSE=1
+	
+# Instalando o SNEP
+echo ''
+corMsg 'azul' "+ Entrando no diretório web para baixar o snep ...."
+
+# Entrando no diretório root web
+cd /var/www/html
+
+# Variáveis que armazenam as mensagens
+echo ''
+corMsg 'azul' "+ Baixando a última versão do snep ...."
+msgErro="Ocorreu um erro! não foi possível baixar os arquivos do SNEP"
+msgCorrige="Verifique sua conexão com a Internet e tente novamente. Saíndo ..."
+remover='/var/www/html/snep-3'
+msgPasso="9|baixaSnep3"
+
+# Configura o git para usar proxy
+git config --global http.proxy $proxy
+
+# Baixa a versão recente do SNEP3
+git clone https://bitbucket.org/snepdev/snep-3.git 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$remover" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige remover msgPasso
+
+} # FIM function baixaSnep3
+
+# Função responsável por ajustes no SNEP3
+function ajustesSnep3(){
+# Variáveis que armazenam as mensagens	
+msgErro="Ocorreu um erro! não foi possível realizar ajustes pós instalação do SNEP"
+msgCorrige="Verifique se está rodando o script como root e tente novamente. Saíndo ..."
+remover='/var/www/html/snep-3'
+msgPasso="10|ajustesSnep3"
+
+# Entrando no diretório do snep
+cd /var/www/html
+
+if [ -e '/var/www/html/snep-3' ]; then
+echo ''
+corMsg 'azul' "+ Renomeando o diretório do snep ...."
+	mv snep-3 snep 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+fi 
+
+# Ajustando as permissões
+echo ''
+corMsg 'azul' "+ Ajustando permissões para o snep ...."
+find . -type f -exec chmod 640 {} \; -exec chown www-data:www-data {} \;
+find . -type d -exec chmod 755 {} \; -exec chown www-data:www-data {} \;
+chmod +x /var/www/html/snep/agi/* 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Ajustando os diretórios
+echo ''
+corMsg 'azul' "+ Ajustando os diretórios do snep ...."
+
+# Criando diretório e arquivos de log do snep
+mkdir -p /var/log/snep 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+touch /var/log/snep/ui.log 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+touch /var/log/snep/agi.log 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Removendo monitor asterisk
+rm -rf /var/spool/asterisk/monitor 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Criando links simbólicos
+ln -sf /var/log/asterisk/full /var/log/snep/full 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+ln -sf /var/log/snep /var/www/html/snep/logs 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+ln -sf /var/www/html/snep/agi /var/lib/asterisk/agi-bin/snep 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+ln -sf /var/www/html/snep/arquivos /var/spool/asterisk/monitor 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Definindo dono e grupo
+chown -R www-data:www-data /var/log/snep 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+###########################################################################################################
+# Linha nova inserida em 10/01/2017
+# Descobre o endereço de rede
+ipRede="$(ip ro li | grep 'proto kernel' | cut -f1 -d '/')"
+
+# Descobre a máscara de rede
+mRede="$(ifconfig | grep inet | grep -i 'masc' | grep -v '127.0.0.1' | cut -f4 -d ':')"
+
+###########################################################################################################
+
+# Criando VirtualHost para SNEP
+echo '<VirtualHost *:80>
+' > /etc/apache2/sites-available/001-snep.conf
+cat /var/www/html/snep/install/snep.apache2 >> /etc/apache2/sites-available/001-snep.conf
+echo '</VirtualHost>' >> /etc/apache2/sites-available/001-snep.conf 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Armazena os IPs permitidos
+ipPerm="$(cat /etc/apache2/sites-available/001-snep.conf | grep 'Allow from')"
+
+# Altera a linha incluíndo as configurações de rede
+sed -i -e "s;${ipPerm};${ipPerm} ${ipRede}\/${mRede};g" /etc/apache2/sites-available/001-snep.conf 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Ativando virtualhost do snep
+a2ensite 001-snep.conf 1>/dev/null 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Redirecionando sempre para /snep
+procura='DocumentRoot /var/www/html'
+insere="$procura\n\tRedirectMatch '^/$' '/snep'"
+
+# Inserindo linha em /etc/apache2/sites-available/000-default
+sed -i -e "s;$procura;$insere;g" /etc/apache2/sites-available/000-default.conf 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Aplicando configurações do apache2
+echo ''
+corMsg 'azul' "+ Aplicando configurações no Servidor Web APACHE2...."
+/etc/init.d/apache2 force-reload 2>$arqErros || trataErros 'Não foi possível reler apache2' 'Verifique se o serviço está instalado' 
+
+# Instalando arquivos default do SNEP para Asterisk
+echo ''
+corMsg 'azul' "+ Instalando arquivos default do snep no ASTERISK...."
+#cd /etc
+rm -rf /etc/asterisk 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+cp -avr /var/www/html/snep/install/etc/asterisk /etc 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+cp /var/www/html/snep/install/etc/odbc* /etc 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Inclui as configurações da rede em /etc/asterisk/sip.conf
+sed -i -e "/^localnet/{p;s/.*/localnet=${ipRede}\/${mRede}/;}" /etc/asterisk/sip.conf 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function ajustesSnep3
+
+# Função responsável por preparar os diretórios de som en, es e pt_BR do Asterisk
+function preparaDirSonsSnep3(){
+	
+## Variáveis que armazenam as mensagens
+echo ''
+corMsg 'azul' "+ Preparando os diretórios de som en, es e pt_BR do SNEP ...."
+cd /usr/src
+msgErro="Ocorreu um erro! não foi possível criar os diretórios de som do SNEP"
+msgCorrige="Verifique se está rodando o script como root e tente novamente. Saíndo ..."
+msgPasso="11|preparaDirSonsSnep3"
+
+## Criando os diretórios necessários
+mkdir -p /var/lib/asterisk/sounds/es/tmp /var/lib/asterisk/sounds/es/backup /var/lib/asterisk/sounds/en/tmp /var/lib/asterisk/sounds/en/backup /var/lib/asterisk/sounds/pt_BR/tmp /var/lib/asterisk/sounds/pt_BR/backup 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+## Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function preparaDirSonsSnep3
+
+# Função responsável por descompactar os arquivos de sons en, es e pt_BR do Asterisk
+function tarSonsSnep3(){
+
+# Variáveis que armazenam as mensagens
+echo ''
+corMsg 'azul' "+ Descompactando o tarball dos arquivos de som en, es e pt_BR do Asterisk ...."
+msgErro="Ocorreu um erro! não foi possível descompactar os arquivos de som do SNEP"
+msgCorrige="Verifique se está rodando o script como root e tente novamente. Saíndo ..."
+msgPasso="12|tarSonsSnep3"
+
+# Descompactando o tarball dos sons en do Asterisk
+tar -xzf /var/www/html/snep/install/sounds/asterisk-core-sounds-en-wav-current.tar.gz -C /var/lib/asterisk/sounds/en 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+tar -xzf /var/www/html/snep/install/sounds/asterisk-extra-sounds-en-wav-current.tar.gz  -C /var/lib/asterisk/sounds/en 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Descompactando o tarball dos sons es do Asterisk
+tar -xzf /var/www/html/snep/install/sounds/asterisk-core-sounds-es-wav-current.tar.gz -C /var/lib/asterisk/sounds/es 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Descompactando o tarball dos sons pt_BR do Asterisk
+tar -xzf /var/www/html/snep/install/sounds/asterisk-core-sounds-pt_BR-wav.tgz -C /var/lib/asterisk/sounds/pt_BR 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function tarSonsSnep3 
+
+# Função responsável por ajustar os arquivos de sons pt_BR do Asterisk
+function ajustesSonsSnep3(){
+
+# Variáveis que armazenam as mensagens
+msgErro="Ocorreu um erro! não foi possível realizar os ajustes nos arquivos de som do SNEP"
+msgCorrige="Verifique se está rodando o script como root e tente novamente. Saíndo ..."
+msgPasso="13|ajustesSonsSnep3"
+	
+echo ''
+corMsg 'azul' "+ Ajustando permissões dos arquivos de som pt_BR do SNEP ...."
+chmod 755 /var/lib/asterisk/sounds 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+#cd /var/lib/asterisk/sounds 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+#mkdir -p tmp backup pt_BR/tmp pt_BR/backup 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+chown -R www-data:www-data /var/lib/asterisk/sounds/* 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Ajustando configurações dos sons do Asterisk - MOH (Music on Hold)
+echo ''
+corMsg 'azul' "+ Ajustando configurações dos sons do Asterisk - MOH (Music on Hold) ...."
+cd /var/lib/asterisk/moh 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+mkdir -p tmp backup 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+mkdir -p snep_1/tmp snep_1/backup 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+mkdir -p snep_2/tmp snep_2/backup 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+mkdir -p snep_3/tmp snep_3/backup 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+chown -R www-data.www-data * 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+rm -f *-asterisk-moh-opsound-wav 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Ajustando sons do Asterisk com o SNEP
+echo ''
+corMsg 'azul' "+ Ajustando sons do Asterisk com o SNEP ...."
+mkdir -p /var/www/html/snep/sounds 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+cd /var/www/html/snep/sounds/ 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+chown -R www-data.www-data /var/www/html/snep/sounds 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+ln -sf /var/lib/asterisk/moh/ moh 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+ln -sf /var/lib/asterisk/sounds/pt_BR/ pt_BR 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function ajustesSonsSnep3
+
+# Função responsável por manipular o banco do SNEP
+function bancoSnep3(){
+
+# Variáveis que armazenam as mensagens
+msgErro="Ocorreu um erro! não foi possível manipular o banco de dados do SNEP"
+msgCorrige="Verifique se está rodando o script como root e tente novamente. Saíndo ..."
+msgPasso="14|bancoSnep3"
+
+# Apagando Base de Dados snep se existir
+mysql -u root -psneppass -e "DROP DATABASE IF EXISTS snep" 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Criando a base de dados, usuário e dados iniciais
+echo ''
+corMsg 'azul' "+ Criando a base de dados, usuário e populando as tabelas do SNEP ...."
+cd /var/www/html/snep/install/database 
+mysql -u root -psneppass < database.sql 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+mysql -u root -psneppass snep < schema.sql 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+mysql -u root -psneppass snep < system_data.sql 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+mysql -u root -psneppass snep < core-cnl.sql 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function bancoSnep3
+
+# Função responsável por ajustes finais no SNEP3
+function odbcSnep3(){
+
+# Variáveis que armazenam as mensagens
+msgErro="Ocorreu um erro! não foi possível realizar os ajustes nos arquivos de som do SNEP"
+msgCorrige="Verifique se está rodando o script como root e tente novamente. Saíndo ..."
+msgPasso="15|odbcSnep3"
+
+# Ajustes finais
+# Verifica a arquitetura na máquina
+arquitetura="$(dpkg --print-architecture)"
+
+if [ "$arquitetura" == 'i386' ]; then
+	arq='i386'
+else
+	arq='x86_64'
+fi
+
+# Altera /etc/odbcinst.ini em Driver, conforme a arquitetura da máquina
+echo ''
+corMsg 'azul' "+ Ajustes finais do SNEP ...."
+sed -i -e "s;/usr/lib/odbc/libmyodbc.so;/usr/lib/$arq-linux-gnu/odbc/libmyodbc.so;g" /etc/odbcinst.ini 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Altera /etc/odbcinst.ini em Setup, conforme a arquitetura da máquina
+sed -i -e "s;/usr/lib/libodbctxtS.so;/usr/lib/$arq-linux-gnu/odbc/libodbctxtS.so;g" /etc/odbcinst.ini 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+#Arquivo: /etc/odbc.ini
+# Altera /etc/odbc.ini em Driver, conforme a arquitetura da máquina
+sed -i -e "s;/usr/lib/odbc/libmyodbc.so;/usr/lib/$arq-linux-gnu/odbc/libmyodbc.so;g" /etc/odbc.ini 2>$arqErros || trataErros "$msgErro" "$msgCorrige" "$msgPasso"
+
+# Esvazia as variáveis
+unset msgErro msgCorrige msgPasso
+
+} # FIM function odbcSnep3
+
+#------------------------------------------------------------------------------------------------------
+# PROGRAMA PRINCIPAL
+#------------------------------------------------------------------------------------------------------
+
+# Chama a função VersaoScript
+versaoScript
+
+# Este script somente poderá ser executado como root 
+if [ "$(whoami)" != "root" ]; then
+tput setaf 3; tput bold; 
+echo '
+	#########################################################################
+	#									#
+	#   Aviso: Apenas o usuário root pode executar este script, saindo...   #
+	#									#
+	#########################################################################
+'
+tput sgr0;
+
+	# Sai do script
+	exit 0
+fi
+
+# Verifica se o debian é >= 8, o script está preparado para o Jessie
+vs=`cat /etc/debian_version | cut -f1 -d .`
+if [ "$vs" -lt 8 ]; then 
+
+	echo ''
+	corMsg 'vermelho' 'A versão de seu debian é menor que 8, Saíndo ...'
+	# Sai do script
+	exit 0
+
+fi
+
+# Garante que não exista $arqErros
+[ -e "$arqErros" ] && rm -f $arqErros
+
+# Verifica se a máquina está atrás de um proxy
+#echo -e "Esta máquina acessa a internet por meio de um proxy? Responda [s = Sim | n = Não]"
+#read pergProxy
+read -e -i 'n' -p "Esta máquina acessa a internet por meio de um proxy? (s = Sim | n = Não) [Enter para 'Não']: " pergProxy
+pergProxy=$(echo $pergProxy | tr SNY sny)
+
+# Verifica a resposta do usuário
+if [ "$(echo $pergProxy | grep -E '(s|y)')" ]; then
+# Coletando informações de proxy
+echo -e "\nColetando informações de PROXY:"
+echo -e "Informe o proxy da rede, no seguinte formato: http://usuario:senha@192.168.1.2:3128/"
+read proxy
+
+export proxy
+
+# Cria o arquivo /etc/apt/apt.conf.d/01proxy e insere infomações do proxy da rede
+echo -e "\nRegistrando informações de proxy ..."
+ftpP="$(echo $proxy | sed 's;http;ftp;')"
+httpsP="$(echo $proxy | sed 's;http;https;')"
+socksP="$(echo $proxy | sed 's;http;socks;')"
+
+echo "
+Acquire::http::proxy \"$proxy\";
+Acquire::ftp::proxy \"$ftpP\";
+Acquire::https::proxy \"$httpsP\";
+Acquire::socks::proxy \"$socksP\";
+" > /etc/apt/apt.conf.d/01proxy
+
+# Variável utilizada na instalação das chaves GPG
+opcao="--keyserver-options http-proxy=$proxy"
+
+# Informa que wget deve utilizar proxy
+wget_proxy=" -e use_proxy=yes -e http_proxy=$proxy "
+
+# Variáveis para o primeiro acesso do SNEP
+HTTP_PROXY=$proxy
+HTTPS_PROXY=$httpsP
+FTP_PROXY=$ftpP
+SOCKS_PROXY=$socksP
+NO_PROXY='localhost,127.0.0.1,localaddress,.localdomain.com'
+http_proxy=$proxy
+https_proxy=$httpsP
+ftp_proxy=$ftpP
+socks_proxy=$socksP
+no_proxy='localhost,127.0.0.1,localaddress,.localdomain.com'
+export HTTP_PROXY HTTPS_PROXY FTP_PROXY SOCKS_PROXY NO_PROXY http_proxy https_proxy ftp_proxy socks_proxy no_proxy
+
+else
+	# Torna as variáveis vazias para utilização em rede sem proxy
+	# Variável utilizada na instalação das chevas GPG
+	opcao=''
+	# Variável utilizada com o wget 
+	wget_proxy=''
+fi
+
+# Verifica se o script já foi rodado e foi interrompido para seguir a partir de onde parou
+if [ ! -e "$arqPasso" ]; then
+
+echo ''
+#corMsg 'verde' "Rodando o script pela primeira vez ..."
+
+	# Inicia a variável c
+	c=0
+	
+	# Inicia um loop passando por todas as funções necessárias para a instalação/configuração do SNEP3
+	while [ "$c" -le 15 ]; do 
+		# Executa a função
+		eval ${passo["$c"]}
+		# Incrementa uma unidade a variável $c
+		let c=c+1
+	done
+
+else
+
+echo ''
+corMsg 'azul' "Houve um problema anteriormente, esta não é a primeira vez que você roda o script ..."
+
+	# Inicia a variável c
+	c="$(cat $arqPasso | cut -f1 -d '|')"
+
+	# Inicia um loop passando por todas as funções necessárias para a instalação/configuração do SNEP3
+	while [ $c -le 15 ]; do 
+		# Executa a função
+		eval ${passo[$c]}
+		# Incrementa uma unidade a variável $c
+		let c=c+1
+	done
+
+fi
+
+# Caso não ocorra erros mostra a mensagem final e reinicia a máquina para aplicar todas as configurações
+echo ''
+#corMsg 'verde' "Tudo pronto, seu sistema será reiniciado para aplicar as alterações realizadas, até breve ......"
+corMsg 'verde' "Tudo pronto, o SNEP foi instalado com sucesso ;)"
+
+# Obtem o endereço ip da máquina
+ipMaq="$(ip ro li | grep 'src' | awk '{printf $9}')"
+corMsg 'amarelo' "Para acessar o SNEP, abra seu navegador e informe o seguinte endereço: http://$ipMaq\n"
+
+# Aguarda 10s
+# pula uma linha
+echo ''
+# Mostra mensagem após 10 segundos
+#echo -ne "Até Breve " 
+echo -ne "Pronto :) "
+for p in 1 2 3 4 5 6 7 8 9 10; do
+	echo -ne "\033[11G\033[@.\033[22G"
+	sleep 1
+done;
+#echo -e "\033[22G\033[\Reiniciando"
+echo -e "\033[22G\033[\OK"
+echo
+
+# Reinicia o sistema
+#reboot
+
+
